@@ -18,6 +18,10 @@
 #   PERMISSION_MODE     โหมดสิทธิ์ของ claude -p (default: acceptEdits)
 #                       * stage 05-seed ต้องรัน seed_db.sh -> ใช้ bypassPermissions ถ้าต้องการรันอัตโนมัติเต็มรูปแบบ
 #   MODEL               โมเดล (default: ปล่อยให้ claude เลือกเอง)
+#   MAX_RETRIES         เพดานจำนวนครั้งที่ gate ตีงานกลับได้ต่อด่าน (default: 2) — กัน reject loop วนไม่จบ
+#
+# Reject loop: ถ้า stage ใดเขียน output ที่มี status="rejected" + reject_to="<stage ก่อนหน้า>"
+#   orchestrator จะกระโดดกลับไปรัน stage นั้นใหม่ (นับครั้งต่อด่าน, ครบ MAX_RETRIES แล้วหยุด)
 set -euo pipefail
 
 # ---------- args ----------
@@ -42,6 +46,7 @@ AGENTS_DIR="$ROOT/agents"
 CLAUDE_BIN="${CLAUDE_BIN:-claude}"
 PERMISSION_MODE="${PERMISSION_MODE:-acceptEdits}"
 MODEL="${MODEL:-}"
+MAX_RETRIES="${MAX_RETRIES:-2}"
 
 # ลำดับ agent บนสายพาน
 STAGES=(01-ingest 02-refine 03-enrich 04-validate 05-seed)
@@ -59,19 +64,38 @@ stage_prompt() {
   fi
 }
 
+# อ่าน field ระดับบนสุดจาก envelope JSON (python3 — เลี่ยง jq ที่อาจไม่ติดตั้ง)
+json_field() {  # $1=file $2=key
+  python3 -c 'import json,sys
+try: print(json.load(open(sys.argv[1])).get(sys.argv[2], ""))
+except Exception: print("")' "$1" "$2"
+}
+
+# หา index ของ stage ใน STAGES (คืน -1 ถ้าไม่เจอ)
+stage_index() {  # $1=name
+  local i
+  for i in "${!STAGES[@]}"; do [[ "${STAGES[$i]}" == "$1" ]] && { echo "$i"; return; }; done
+  echo "-1"
+}
+
 # ---------- run ----------
 command -v "$CLAUDE_BIN" >/dev/null 2>&1 || { err "ไม่พบคำสั่ง '$CLAUDE_BIN' บน PATH (ตั้ง CLAUDE_BIN ได้)"; exit 1; }
 
-log "เริ่ม pipeline job=$JOB_ID  (permission-mode=$PERMISSION_MODE${MODEL:+, model=$MODEL})"
-started=0
-prev=""
+log "เริ่ม pipeline job=$JOB_ID  (permission-mode=$PERMISSION_MODE${MODEL:+, model=$MODEL}, max-retries=$MAX_RETRIES)"
 
-for stage in "${STAGES[@]}"; do
-  # ข้ามจนกว่าจะถึง --from
-  if [[ -n "$FROM_STAGE" && $started -eq 0 ]]; then
-    if [[ "$stage" == "$FROM_STAGE" ]]; then started=1; else prev="$stage"; continue; fi
-  fi
+# หา index เริ่ม (รองรับ --from)
+start_idx=0
+if [[ -n "$FROM_STAGE" ]]; then
+  start_idx="$(stage_index "$FROM_STAGE")"
+  [[ "$start_idx" -ge 0 ]] || { err "ไม่รู้จัก --from stage: $FROM_STAGE"; exit 1; }
+fi
 
+REJECTS=()   # indexed array นับรอบตีกลับ คีย์ด้วย index ของด่าน gate ใน STAGES (รองรับ bash 3.2)
+i="$start_idx"
+
+while [[ $i -lt ${#STAGES[@]} ]]; do
+  stage="${STAGES[$i]}"
+  prev=""; [[ $i -gt 0 ]] && prev="${STAGES[$((i-1))]}"
   dir="$AGENTS_DIR/$stage"
   out="$dir/output/$JOB_ID.json"
   [[ -d "$dir" ]] || { err "ไม่พบโฟลเดอร์ agent: $dir"; exit 1; }
@@ -92,7 +116,26 @@ for stage in "${STAGES[@]}"; do
 
   t1=$(date +%s)
   log "✔ $stage : เสร็จใน $((t1 - t0))s -> output/$JOB_ID.json"
-  prev="$stage"
+
+  # ---- reject loop: gate ตีงานกลับ upstream ----
+  if [[ "$(json_field "$out" status)" == "rejected" ]]; then
+    target="$(json_field "$out" reject_to)"
+    [[ -n "$target" ]] || { err "$stage : status=rejected แต่ไม่มี reject_to — หยุด"; exit 1; }
+    tidx="$(stage_index "$target")"
+    if [[ "$tidx" -lt 0 || "$tidx" -ge "$i" ]]; then
+      err "$stage : reject_to='$target' ต้องเป็น stage ก่อนหน้าในสายเท่านั้น — หยุด"; exit 1
+    fi
+    REJECTS[$i]=$(( ${REJECTS[$i]:-0} + 1 ))
+    if [[ ${REJECTS[$i]} -gt $MAX_RETRIES ]]; then
+      err "$stage : ตีกลับครบเพดาน ($MAX_RETRIES รอบ) แล้วยังไม่ผ่าน — หยุด pipeline ที่ gate นี้ ⚠️"
+      exit 1
+    fi
+    log "↩ $stage : ตีงานกลับไป $target (รอบ ${REJECTS[$i]}/$MAX_RETRIES)"
+    i="$tidx"
+    continue
+  fi
+
+  i=$(( i + 1 ))
 done
 
 log "✅ pipeline เสร็จสมบูรณ์ job=$JOB_ID"

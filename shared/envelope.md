@@ -33,10 +33,15 @@
 | `stage` | string | ชื่อขั้นล่าสุดที่ผลิตไฟล์นี้ (เช่น `01-ingest`, `02-refine`, ...) |
 | `produced_by` | string | agent ที่เขียนไฟล์นี้ (เท่ากับ `stage` ในทางปฏิบัติ) |
 | `produced_at` | string (ISO-8601 UTC) | เวลาที่ผลิตไฟล์นี้ |
-| `status` | `"ok"` \| `"error"` | สถานะของงาน ณ ขั้นนี้ ถ้า `error` ปลายทางควรหยุด/ข้าม |
+| `status` | `"ok"` \| `"error"` \| `"rejected"` | สถานะของงาน ณ ขั้นนี้ ถ้า `error` ปลายทางควรหยุด/ข้าม; `"rejected"` ใช้โดย gate agent เพื่อตีงานกลับ upstream (ดู Reject loop) |
 | `data` | object | เนื้อหาหลัก แต่ละขั้นปรับปรุง/ต่อยอด `data` ของขั้นก่อน |
 | `issues` | array | ปัญหา/คำเตือนที่พบ (ใช้มากในขั้น validate) แต่ละ entry เช่น `{ "field": "...", "level": "warn\|error", "message": "..." }` |
 | `history` | array | ประวัติทุกขั้นที่ผ่านมา — **ต่อท้ายเท่านั้น ห้ามลบของเดิม** |
+| `reject_to` | string *(optional)* | ใช้คู่กับ `status:"rejected"` เท่านั้น — ชื่อ stage ปลายทางที่ต้องการให้สายพานวนกลับไปทำใหม่ (เช่น `"02-refine"`) |
+| `attempts` | number *(optional)* | จำนวนรอบที่ job นี้ถูกตีกลับมาทำซ้ำ — orchestrator เป็นคนเพิ่มค่า ใช้กันวนไม่จบ |
+
+> **Backward-compatible:** `reject_to` / `attempts` เป็น field เสริม — envelope ที่ไม่มีสอง field นี้
+> ยัง valid 100% สายพานปกติ (ไม่มี gate) ไม่ต้องสนใจมันเลย
 
 ---
 
@@ -51,3 +56,17 @@
 4. **`job_id` คงที่ตลอดสาย** — ชื่อไฟล์ output ต้องเป็น `[job_id].json` เสมอ
 5. **ห้ามทิ้ง `history` เดิม** — ต้องเห็นเส้นทางครบทุกขั้นในไฟล์ของขั้นสุดท้าย
 6. เวลาทั้งหมดเป็น UTC รูปแบบ ISO-8601 (`YYYY-MM-DDTHH:MM:SSZ`)
+
+---
+
+## Reject loop (optional) — สำหรับ gate agent
+
+โดยปกติสายพานเดินหน้าทางเดียว แต่ถ้าต้องการ **QC แบบมี loop** (เด้งงานกลับไปแก้ที่ขั้นก่อน)
+ใช้กลไกนี้ (ตัวอย่างแม่แบบที่ [agents/_blueprint-gate/](../agents/_blueprint-gate/)):
+
+- gate agent ที่ตรวจแล้ว **ไม่ผ่าน** ให้ตั้ง `status: "rejected"` + `reject_to: "<stage ปลายทาง>"`
+  (เช่น `"02-refine"`) แล้วต่อ `history`/`issues` ตามปกติ — **ยังเขียนแค่ output ของตัวเอง ไม่แก้ของใคร**
+- orchestrator เห็น `status:"rejected"` + `reject_to` → **กระโดดกลับ** ไปรัน stage นั้นใหม่,
+  เพิ่ม `attempts` ขึ้น 1
+- มี **เพดาน** `MAX_RETRIES` (default 2) กันวนไม่จบ — ครบเพดานแล้ว orchestrator หยุดและรายงาน
+- ขั้นที่ถูกตีกลับ อ่าน `issues` เพื่อรู้ว่าต้องแก้อะไร แล้วผลิตใหม่ตามกติกาเดิม (history ต่อเนื่อง ไม่ลบของเก่า)

@@ -21,16 +21,27 @@ input/  →  01-ingest  →  02-refine  →  03-enrich  →  04-validate  →  0
 
 ```
 ai-factory-blueprint/
-├── orchestrator/run_pipeline.sh   # ตัว orchestrator: รัน claude -p ทีละ agent ตามลำดับ
-├── shared/envelope.md             # data contract ที่ทุก agent ใช้ร่วมกัน
+├── orchestrator/run_pipeline.sh   # ตัว orchestrator: รัน claude -p ทีละ agent + reject loop
+├── shared/envelope.md             # data contract ที่ทุก agent ใช้ร่วมกัน (+ Reject loop)
 ├── shared/foreman.md              # persona ของผู้ช่วย "Foreman (ช่างหมาย)" ที่คุมสายพาน (โหลดทุก session)
+├── shared/templates/              # แม่แบบ persona + CLAUDE.md สำหรับสร้าง agent ใหม่
+├── scripts/
+│   ├── new-agent.sh               # scaffold stage ใหม่จาก template
+│   ├── new-factory.sh             # โคลน blueprint ทั้งโรงไปเป็นโรงงานใหม่
+│   ├── inspect_envelope.sh        # Line Inspector: ตรวจ envelope ทุกขั้น (read-only)
+│   └── test_pipeline.sh           # golden test: รันสายพานบน fixture แล้ว assert ผล
+├── tests/fixtures/                # fixture สำหรับ golden test
 └── agents/
-    ├── 01-ingest/   CLAUDE.md, input/, output/   # ตัวเริ่ม: รับไฟล์ดิบ → envelope
-    ├── 02-refine/   CLAUDE.md, output/           # ทำความสะอาด/normalize/ตัดซ้ำ
-    ├── 03-enrich/   CLAUDE.md, output/           # เติม/derive fields
-    ├── 04-validate/ CLAUDE.md, output/           # ตรวจ schema/rules
-    └── 05-seed/     CLAUDE.md, output/, seed_db.sh, db/   # แปลงเป็น seed → เขียน DB (stub)
+    ├── 01-ingest/   CLAUDE.md, persona.md(ปุ้ย), input/, output/   # ตัวเริ่ม: รับไฟล์ดิบ → envelope
+    ├── 02-refine/   CLAUDE.md, persona.md(กวาง), output/           # ทำความสะอาด/normalize/ตัดซ้ำ
+    ├── 03-enrich/   CLAUDE.md, persona.md(พูน), output/            # เติม/derive fields
+    ├── 04-validate/ CLAUDE.md, persona.md(เข้ม), output/           # ตรวจ schema/rules
+    ├── 05-seed/     CLAUDE.md, persona.md(ปลาย), output/, seed_db.sh, db/   # seed → เขียน DB (stub)
+    └── _blueprint-gate/  CLAUDE.md, persona.md(ด่าน)              # อะไหล่: gate ที่ตีงานกลับ (reject loop)
 ```
+
+> คนงานแต่ละตัวมี **persona.md** (ตัวตน/ชื่อคนไทย) import เข้า CLAUDE.md ด้วย `@persona.md`
+> เหมือนที่ root import `@shared/foreman.md`
 
 ## วิธีใช้
 
@@ -68,6 +79,36 @@ ai-factory-blueprint/
 
 ## เพิ่ม agent ใหม่ในสายพาน
 
-1. สร้างโฟลเดอร์ `agents/NN-ชื่อ/` พร้อม `CLAUDE.md` และ `output/`
-2. ให้ CLAUDE.md อ่านจาก `../<stage-ก่อนหน้า>/output/<JOB_ID>.json` และเขียน `output/<JOB_ID>.json`
-3. เพิ่มชื่อ stage ลงในอาเรย์ `STAGES` ใน `orchestrator/run_pipeline.sh`
+ใช้ scaffold script (เร็วสุด):
+
+```bash
+scripts/new-agent.sh 06-export          # สร้าง agents/06-export/ จาก template (CLAUDE.md + persona.md + output/)
+scripts/new-agent.sh 01-ingest --first  # --first = สร้างโฟลเดอร์ input/ ให้ด้วย (ตัวเริ่มสาย)
+```
+
+แล้วทำตามที่สคริปต์บอก: กรอก persona/ใบสั่งงาน (แทน placeholder) + เติมชื่อ stage ลง `STAGES`
+ใน `orchestrator/run_pipeline.sh` (วางให้ถูกลำดับ — ตัวก่อนหน้าใน `STAGES` คือ upstream)
+
+## ตรวจคุณภาพ + ทดสอบ
+
+```bash
+scripts/inspect_envelope.sh job-2026-0001   # ตรวจ envelope ทุกขั้น (read-only): job_id คงที่, history ต่อเนื่อง, stage ตรงโฟลเดอร์
+CLAUDE_BIN=/path/to/claude scripts/test_pipeline.sh   # golden test: รันสายพานบน fixture แล้ว assert (3→2→2, history 5 ขั้น)
+```
+
+## QC loop (เด้งงานกลับไปแก้)
+
+โดยปกติสายพานเดินหน้าทางเดียว ถ้าต้องการ gate ที่ **ตีงานกลับไปแก้ที่ขั้นก่อน**:
+
+1. ก๊อป `agents/_blueprint-gate/` เป็น `agents/NN-gate/` (เช่น `045-gate`) แล้วปรับเกณฑ์ตรวจใน CLAUDE.md
+2. เติมชื่อลง `STAGES` ในตำแหน่งที่ต้องการคั่น
+3. เมื่อ gate ตั้ง `status:"rejected"` + `reject_to:"<stage ก่อนหน้า>"` → orchestrator วนกลับไปทำใหม่
+   (เพดาน `MAX_RETRIES` default 2 กันวนไม่จบ) — ดูรายละเอียดสัญญาที่ [`shared/envelope.md`](shared/envelope.md) หัวข้อ Reject loop
+
+## สร้างโรงงานใหม่จาก blueprint นี้
+
+```bash
+scripts/new-factory.sh ../my-new-factory   # โคลนทั้งโรง ตัด artifact/ของเฉพาะเครื่องออก พร้อมรัน demo
+```
+
+แล้วเปิด `FACTORY_TODO.md` ในโรงงานใหม่ ทำตามเช็กลิสต์ปรับแต่ง
