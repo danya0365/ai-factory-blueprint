@@ -1,13 +1,13 @@
 ---
 name: newsfactory-how-it-works
-description: "How the NewsFactory project (/Users/marosdeeuma/NewsFactory) works — an 18-stage AI content pipeline; reference so we don't rescan the whole folder each session"
+description: "How the NewsFactory project works — an 18-stage AI content pipeline; reference so we don't rescan the whole folder each session"
 metadata: 
   node_type: memory
   type: reference
   originSessionId: 131fe7d0-4534-4b24-be16-4c35f88c56d6
 ---
 
-**NewsFactory** = โรงงานผลิตข่าวการเงิน/Forex อัตโนมัติ ที่ `/Users/marosdeeuma/NewsFactory` (โปรเจกต์แยก คนละ repo กับ ai-factory-blueprint). รับ market data ดิบ → ปั่นเป็นบทความหลายภาษา ตรวจ fact + ไฮไลต์ + รูปปก → publish ขึ้น API. โครงสร้างเดียวกับสายพานเรา (input/→output/ ต่อกันทีละ stage) แต่ใหญ่กว่ามาก: **18 stage** เทียบกับเรา 5.
+**NewsFactory** = โรงงานผลิตข่าวการเงิน/Forex อัตโนมัติ (โปรเจกต์แยก คนละ repo กับ ai-factory-blueprint). รับ market data ดิบ → ปั่นเป็นบทความหลายภาษา ตรวจ fact + ไฮไลต์ + รูปปก → publish ขึ้น API. โครงสร้างเดียวกับสายพานเรา (input/→output/ ต่อกันทีละ stage) แต่ใหญ่กว่ามาก: **18 stage** เทียบกับเรา 5.
 
 ## สายพาน 18 ขั้น
 01 collect_data (เก็บข่าว) → 02 bannarak (แยกหมวด) → 03 choose_topic → 04 editor_check_topic (gate, reject loop กลับ 03) → 05 deep_research → 06 fact_checker → 07 seo_keyword → 08 angle_planing → 09 angle_check → 10 choose_writer → 11 writer_team (20 นักเขียน W01–W20) → 12 editor_check_content → 13 highlight → 14 translator (แปล 20 ภาษา) → 15 transtale_check → 16 image_check → 17 publish_prepare → 18 api_post → 📤 REST POST ไป api-seed-news

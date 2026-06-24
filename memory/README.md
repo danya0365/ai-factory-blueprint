@@ -9,15 +9,17 @@
 
 ## ⚠️ ตั้งค่าครั้งเดียวบนเครื่องใหม่ (สำคัญ)
 
-ตัว setting ที่ชี้ memory มาที่นี่ **เดินทางผ่าน git ไม่ได้** (กฎความปลอดภัยของ Claude Code:
-project `.claude/settings.json` ที่ commit ได้ จะ**ไม่ถูกอ่าน** สำหรับ `autoMemoryDirectory`)
+ตัว setting ที่ชี้ memory มาที่นี่ **เดินทางผ่าน git ไม่ได้** (กฎ workspace-trust ของ Claude Code:
+project `.claude/settings.json`/`settings.local.json` ที่มาจาก clone ต้องผ่าน trust ก่อน
+ถึงจะ honored — และ `autoMemoryDirectory` รองรับเฉพาะ absolute path หรือ `~/`)
 
-ดังนั้นพอ clone ไปเครื่องใหม่ ต้องสร้างไฟล์ `.claude/settings.local.json` (gitignored) เองครั้งเดียว:
+ดังนั้นพอ clone ไปเครื่องใหม่ ให้รัน script นี้ **ครั้งเดียว** (มันคำนวณ path ของ repo เองให้):
 
-```json
-{
-  "autoMemoryDirectory": "./memory"
-}
+```bash
+./scripts/setup-claude-memory.sh
 ```
 
-ทำครั้งเดียวจบ — หลังจากนั้น Claude Code จะอ่าน/เขียน memory ที่โฟลเดอร์นี้ และเนื้อหา memory จะ sync ผ่าน git ตามปกติ
+script จะสร้าง `.claude/settings.local.json` (gitignored) ด้วย absolute path ของ repo บนเครื่องนั้น
+ทำครั้งเดียวจบ — หลังจากนั้น Claude Code จะอ่าน/เขียน memory ที่โฟลเดอร์นี้ และเนื้อหา memory
+จะ sync ผ่าน git ตามปกติ (ตัว path เครื่องอยู่ใน settings.local.json ที่ไม่ถูก commit → ไม่มี path
+เฉพาะเครื่องหลุดลง git)
