@@ -23,6 +23,10 @@ node_modules/
 # --- Logs ---
 *.log
 
+# --- Claude Code machine-local settings (มี autoMemoryDirectory ที่ต้องตั้งเองต่อเครื่อง) ---
+# หมายเหตุ: memory/ ตั้งใจ commit (ให้เดินทางข้ามเครื่องผ่าน git) — ดู memory/README.md
+.claude/settings.local.json
+
 # --- OS / editor noise ---
 .DS_Store
 Thumbs.db
