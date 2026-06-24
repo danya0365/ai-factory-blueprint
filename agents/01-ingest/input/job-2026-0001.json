@@ -1,0 +1,8 @@
+{
+  "source": "signup-form",
+  "records": [
+    { "name": "  Somchai  Jaidee ", "email": "SOMCHAI@Example.COM", "phone": "081-234-5678", "country": "th" },
+    { "name": "Anna O'Brien", "email": "anna@example.com", "phone": "+66812345679", "country": "Thailand" },
+    { "name": "Somchai Jaidee", "email": "somchai@example.com", "phone": "0812345678", "country": "TH" }
+  ]
+}

@@ -1,0 +1,30 @@
+# ===== AI Factory Blueprint — .gitignore =====
+
+# --- Pipeline artifacts (ผลรันแต่ละ agent — regenerate ได้จาก input) ---
+# ignore เนื้อหาในทุกโฟลเดอร์ output/ แต่คงโครงโฟลเดอร์ไว้ด้วย .gitkeep
+agents/*/output/*
+!agents/*/output/.gitkeep
+
+# --- Mock DB / seed logs (agent 05 สร้างเองด้วย mkdir -p) ---
+agents/05-seed/db/
+
+# --- Secrets / config (สำคัญตอนต่อ DB/API จริงใน seed_db.sh) ---
+.env
+.env.*
+!.env.example
+
+# --- Python (seed_db.sh เรียก python3) ---
+__pycache__/
+*.py[cod]
+
+# --- Node (กรณี CLAUDE_BIN เป็น CLI แบบ node-based ในโฟลเดอร์นี้) ---
+node_modules/
+
+# --- Logs ---
+*.log
+
+# --- OS / editor noise ---
+.DS_Store
+Thumbs.db
+.idea/
+*.swp
